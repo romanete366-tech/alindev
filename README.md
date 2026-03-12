@@ -5,18 +5,19 @@ Universal Code & File Converter - Convert HTML/CSS/JS to Python and vice versa.
 ## Features
 
 - **HTML/CSS/JS → Python** (PyQt5 or PyWebView)
-- **Python → HTML/CSS/JS**
+- **Python → HTML/CSS/JS** (PyQt5/Tkinter to web)
 - **EXE → Python** (decompile script)
-- **Packed → Unpacked EXE**
-- **Unpacked → Packed EXE**
-- **ZIP → Folder**
+- **Packed → Unpacked EXE** (unpacking script)
+- **Unpacked → Packed EXE** (packing script)
+- **ZIP → Folder** (extraction script)
 - **Next.js → Python** (Flask/Django)
 
 ## Tech Stack
 
 - Next.js 15
 - TypeScript
-- z-ai-web-dev-sdk
+- Tailwind CSS
+- AI-powered conversion
 
 ## Getting Started
 
@@ -25,4 +26,6 @@ bun install
 bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to use the app.
+## License
+
+MIT
