@@ -4,104 +4,229 @@ import ZAI from 'z-ai-web-dev-sdk'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { html, css, js } = body
+    const { input, mode, conversionType, gitUrl, fileName, files } = body
 
-    if (!html && !css && !js) {
-      return NextResponse.json({ error: 'No code provided' }, { status: 400 })
+    if (!input && !gitUrl && !fileName && (!files || files.length === 0)) {
+      return NextResponse.json({ error: 'No input provided' }, { status: 400 })
     }
 
     const zai = await ZAI.create()
 
-    const codeParts: string[] = []
-    if (html) codeParts.push(`HTML:\n\`\`\`html\n${html}\n\`\`\``)
-    if (css) codeParts.push(`CSS:\n\`\`\`css\n${css}\n\`\`\``)
-    if (js) codeParts.push(`JavaScript:\n\`\`\`javascript\n${js}\n\`\`\``)
+    let prompt: string
+    let systemPrompt: string
 
-    const prompt = `Convert this web code to a SINGLE runnable Python GUI application using PyQt5.
+    switch (conversionType) {
+      case 'html-to-python':
+        if (mode === 'pywebview') {
+          prompt = `Convert this web code to a Python application using PyWebView.
 
-${codeParts.join('\n\n')}
+${input}
 
 STRICT RULES:
-1. Output ONE complete, executable Python script - no multiple approaches
-2. Use PyQt5 for the GUI (professional look, CSS-like styling support)
-3. Translate HTML elements to PyQt5 widgets:
-   - <div>, <section> → QFrame/QWidget
+1. Output ONE complete, executable Python script
+2. Use webview.create_window() to display the HTML content
+3. Embed all CSS inside <style> tags in the HTML
+4. Convert JavaScript functions to Python methods and expose them via webview.api class
+5. Implement localStorage using JSON file storage in appdata folder
+6. The app MUST run immediately with: python filename.py
+7. Add comment at top: # Build: pyinstaller --noconsole --onefile script.py
+8. NO markdown blocks, ONLY Python code
+
+Generate now:`
+
+          systemPrompt = `You are a Python expert creating PyWebView desktop applications. Output ONLY valid Python code, no markdown.`
+        } else {
+          prompt = `Convert this HTML/CSS/JS to a PyQt5 GUI application.
+
+${input}
+
+RULES:
+1. Output ONE complete, executable Python script
+2. Map HTML elements to PyQt5 widgets:
+   - <div>, <section> → QFrame/QWidget with layout
    - <h1>-<h6>, <p>, <span> → QLabel
    - <button> → QPushButton with clicked.connect()
    - <input>, <textarea> → QLineEdit/QTextEdit
-   - <form> → QWidget with layout
    - <ul>/<ol> → QListWidget
-   - <li> → QListWidgetItem
-4. Convert CSS to setStyleSheet() calls on widgets
-5. Convert JavaScript to Python methods connected via signals/slots
+   - <form> → QWidget with layout
+3. Convert CSS to setStyleSheet() calls
+4. Convert JavaScript to Python methods with signals/slots
+5. Implement localStorage using JSON file in appdata folder
+6. Add: # Build: pyinstaller --noconsole --onefile script.py
+7. NO markdown, ONLY Python code
 
-LOCAL STORAGE REQUIREMENTS:
-6. Create a data storage system at: Programs/Data/Data.txt
-7. On first run, ask user to set a password (save hashed password to Data.txt)
-8. On subsequent runs, require password to unlock the app
-9. Store all app data in Data.txt (JSON format)
-10. Use appdata path: os.path.join(os.getenv('APPDATA'), 'Programs', 'Data', 'Data.txt')
-11. Create the directory if it doesn't exist
+Generate now:`
 
-EXE BUILD INSTRUCTIONS (add as comment at top):
-12. Add this comment at the very top of the file:
-    # Build command: pyinstaller --noconsole --onefile --windowed script.py
+          systemPrompt = `You convert HTML/CSS/JS to PyQt5 GUI applications. Output ONLY Python code, no markdown.`
+        }
+        break
 
-OUTPUT FORMAT:
-- NO markdown code blocks
-- NO explanations before or after
-- ONLY valid Python code
-- Include all necessary imports
-- Include main block that launches the app
+      case 'python-to-html':
+        prompt = `Convert this Python PyQt5/Tkinter code to HTML/CSS/JavaScript.
 
-Generate the Python code now:`
+${input}
+
+RULES:
+1. Output a single HTML file with embedded CSS and JavaScript
+2. Map PyQt5/Tkinter widgets to HTML:
+   - QLabel → <p>, <h1>-<h6>, <span>
+   - QPushButton → <button>
+   - QLineEdit/QTextEdit → <input>, <textarea>
+   - QListWidget → <ul>/<ol>
+   - QFrame/QWidget → <div>
+3. Convert setStyleSheet() to CSS in <style> tags
+4. Convert Python methods to JavaScript functions
+5. Keep the same functionality and appearance
+6. NO markdown, ONLY HTML code
+
+Generate now:`
+
+        systemPrompt = `You convert Python GUI code to HTML/CSS/JS. Output ONLY HTML code, no markdown.`
+        break
+
+      case 'exe-to-python':
+        prompt = `Generate Python source code for decompiling an EXE file.
+
+File: ${fileName || 'unknown.exe'}
+
+Provide a complete Python script that:
+1. Uses pyinstxtractor to extract PyInstaller EXE
+2. Uses uncompyle6 or decompyle3 to decompile .pyc files
+3. Reconstructs the original Python source
+4. Handles common packers and protectors
+
+Include:
+- All necessary imports
+- Step-by-step extraction process
+- Error handling
+- Output file organization
+
+Add comment: # pip install pyinstxtractor uncompyle6 pefile
+
+NO markdown, ONLY Python code.`
+
+        systemPrompt = `You are a reverse engineering expert. Create Python scripts for EXE decompilation. Output ONLY Python code.`
+        break
+
+      case 'packed-to-unpacked':
+        prompt = `Create a Python script to unpack a packed EXE file.
+
+File: ${fileName || 'unknown.exe'}
+
+Generate a comprehensive unpacking script that:
+1. Detects the packer (UPX, Themida, VMProtect, ASPack, etc.)
+2. Unpacks the executable
+3. Rebuilds the import table
+4. Saves the unpacked EXE
+
+Include:
+- Packer detection logic
+- Multiple unpacker support
+- pefile usage for PE analysis
+- Error handling
+
+Add comment: # pip install pefile capstone
+
+NO markdown, ONLY Python code.`
+
+        systemPrompt = `You are a malware analyst and reverse engineer. Create EXE unpacking scripts. Output ONLY Python code.`
+        break
+
+      case 'unpacked-to-packed':
+        prompt = `Create a Python script to pack an EXE file.
+
+File: ${fileName || 'unknown.exe'}
+
+Generate a script that:
+1. Packs the EXE using UPX or similar
+2. Optionally converts Python scripts to standalone EXE
+3. Applies compression and protection
+4. Creates the final packed executable
+
+Include:
+- PyInstaller integration
+- UPX compression
+- Custom icon and metadata support
+- Build command generation
+
+Add comment: # pip install pyinstaller, download UPX from upx.github.io
+
+NO markdown, ONLY Python code.`
+
+        systemPrompt = `You create Python scripts for packing and protecting executables. Output ONLY Python code.`
+        break
+
+      case 'zip-to-folder':
+        prompt = `Create a Python script to extract and organize a ZIP file.
+
+File: ${fileName || 'archive.zip'}
+
+Generate a script that:
+1. Extracts ZIP contents to a folder
+2. Organizes files by type (images, documents, code, etc.)
+3. Handles nested ZIPs recursively
+4. Creates a clean folder structure
+5. Reports extraction summary
+
+Include:
+- zipfile and shutil usage
+- Progress reporting
+- Error handling for corrupt archives
+- Directory structure creation
+
+NO markdown, ONLY Python code.`
+
+        systemPrompt = `You create Python scripts for file extraction and organization. Output ONLY Python code.`
+        break
+
+      case 'nextjs-to-python':
+        const repoContext = gitUrl ? `Git repository: ${gitUrl}` : ''
+        const filesContext = files && files.length > 0 ? `Files: ${files.join(', ')}` : ''
+        
+        prompt = `Convert a Next.js application to Python Flask/Django.
+
+${repoContext}
+${filesContext}
+${input ? `Code:\n${input}` : ''}
+
+RULES:
+1. Output a complete Python web application
+2. Convert React components to Jinja2 templates
+3. Convert Next.js API routes to Flask/Django views
+4. Convert getServerSideProps/getStaticProps to backend logic
+5. Handle routing with Flask routes
+6. Include models, views, and templates structure
+7. Add: # pip install flask sqlalchemy
+
+Generate a complete, working Python web application.
+NO markdown, ONLY Python code.`
+
+        systemPrompt = `You convert Next.js applications to Flask/Django. Output ONLY Python code.`
+        break
+
+      default:
+        return NextResponse.json({ error: 'Unknown conversion type' }, { status: 400 })
+    }
 
     const completion = await zai.chat.completions.create({
       messages: [
-        {
-          role: 'system',
-          content: `You are a Python expert that converts HTML/CSS/JS to working Python GUI applications using PyQt5.
-
-ELEMENT MAPPING:
-- <div>, <section> → QFrame or QWidget with layout
-- <h1>-<h6>, <p>, <span> → QLabel with text
-- <button> → QPushButton with .clicked.connect(handler)
-- <input type="text"> → QLineEdit
-- <textarea> → QTextEdit
-- <ul>/<ol> → QListWidget
-- <form> → QWidget with QFormLayout or QVBoxLayout
-- <img> → QLabel with QPixmap
-- <a> → QPushButton or QLabel with link
-
-STYLING:
-- Use widget.setStyleSheet("css-here") for styling
-- Support colors, fonts, padding, margins, borders, backgrounds
-
-DATA STORAGE:
-- Use JSON for storing data in text files
-- Hash passwords with hashlib before storing
-- Use os.getenv('APPDATA') for Windows app data folder
-
-Output ONLY valid Python code, nothing else. Make it professional and complete.`
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
       ],
-      temperature: 0.2
+      temperature: 0.2,
+      max_tokens: 4000
     })
 
-    let pythonCode = completion.choices[0]?.message?.content || ''
+    let output = completion.choices[0]?.message?.content || ''
 
-    // Remove markdown code blocks if present
-    pythonCode = pythonCode
-      .replace(/^```python\n?/i, '')
+    // Remove markdown code blocks
+    output = output
+      .replace(/^```(?:python|html|javascript|css)?\n?/i, '')
       .replace(/^```\n?/i, '')
       .replace(/\n?```$/i, '')
       .trim()
 
-    return NextResponse.json({ python: pythonCode })
+    return NextResponse.json({ output })
   } catch (error: any) {
     console.error('Conversion error:', error)
     return NextResponse.json(
